@@ -1,0 +1,48 @@
+trigger: none
+
+variables:
+  agent_environment: 'non-prod'
+  variable_group_name: 'ipe-ci-nzn-platform'
+  agent_pool_name: 'synapse-agent-pool'
+
+jobs:
+- job: Helm CI Job
+  displayName: Helm CI Job
+  pool:
+    name: ${{ variables.agent_pool_name }}
+    demands:
+    - Agent.Environment -equals ${{ variables.agent_environment }}
+  variables:
+    - group: ${{ variables.variable_group_name }}
+  steps:
+    - checkout: self
+      path: local_repo
+      fetchDepth: 1
+
+    - task: Bash@3
+      displayName: Verify Helm Installation
+      inputs:
+        workingDirectory: $(Build.Repository.LocalPath)
+        targetType: 'inline'
+        script: |
+          echo "======= Verifying Helm ======"
+          if ! command -v helm &> /dev/null; then
+            echo "ERROR: Helm is not installed"
+            exit 1
+          fi
+          helm version
+          echo "======= Helm verification complete ======"
+        failOnStderr: true
+      env:
+        NO_PROXY: localhost,10.0.0.0/8,.asbbank.co.nz,.prod.asbgroup.co.nz,.asbgroup.co.nz,azmk8s.io,.vault.azure.net,.azurecr.io,.core.windows.net
+
+    - task: PythonScript@0
+      displayName: 'Helm Template Diff & Comment PR'
+      inputs:
+        pythonInterpreter: '/usr/bin/python3'
+        scriptSource: 'filePath'
+        scriptPath: '$(Build.Repository.LocalPath)/helm.parse.py'
+        workingDirectory: $(Build.Repository.LocalPath)
+      env:
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        SYSTEM_PULLREQUEST_TARGETBRANCH: $(System.PullRequest.TargetBranch)
